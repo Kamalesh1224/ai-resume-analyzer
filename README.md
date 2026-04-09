@@ -50,7 +50,7 @@ Resume Match Intelligence is a Flask-based ATS review tool that ranks multiple P
 ![Home](screenshots/home.png)
 
 ### Result Dashboard
-![Result](screenshots/result.png)
+![Home](screenshots/result.png)
 ## Run locally
 
 ```bash
