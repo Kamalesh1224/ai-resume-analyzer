@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resume Match Intelligence | Executive ATS Review</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body class="{{ 'has-results' if analysis else 'landing' }}">
+  {% macro render_skill_groups(items, empty_message, chip_class='') -%}
+    {% if items %}
+      {% for group in items|groupby('category') %}
+        <div class="group-block">
+          <div class="group-header">
+            <div>
+              <strong>{{ group.grouper }}</strong>
+              <small>{{ group.list|length }} signal{{ '' if group.list|length == 1 else 's' }}</small>
+            </div>
+          </div>
+          <div class="chip-cloud">
+            {% for skill in group.list %}
+              <span class="chip {{ chip_class }}" title="{{ skill.evidence }} x{{ skill.occurrences }}">
+                <span>{{ skill.name }}</span>
+                <small>x{{ skill.occurrences }}</small>
+              </span>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-copy">{{ empty_message }}</p>
+    {% endif %}
+  {%- endmacro %}
+
+  {% macro render_term_cloud(items, empty_message, chip_class='chip-soft') -%}
+    {% if items %}
+      <div class="chip-cloud">
+        {% for item in items %}
+          <span class="chip {{ chip_class }}">{{ item }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty-copy">{{ empty_message }}</p>
+    {% endif %}
+  {%- endmacro %}
+
+  {% macro render_category_coverage(items, empty_message) -%}
+    {% if items %}
+      <div class="coverage-list">
+        {% for item in items %}
+          <div class="coverage-row">
+            <div class="coverage-copy">
+              <div class="coverage-title">
+                <strong>{{ item.category }}</strong>
+                <span>{{ item.matched }}/{{ item.total }} represented</span>
+              </div>
+              {% if item.missing_skills %}
+                <p>Priority gaps: {{ item.missing_skills[:3]|join(', ') }}</p>
+              {% else %}
+                <p>All identified requirements in this category are represented.</p>
+              {% endif %}
+            </div>
+            <div class="coverage-meter">
+              <span style="width: {{ item.percent }}%"></span>
+            </div>
+            <strong class="coverage-score">{{ item.percent }}%</strong>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty-copy">{{ empty_message }}</p>
+    {% endif %}
+  {%- endmacro %}
+
+  {% macro render_candidate_detail(candidate, is_active=False) -%}
+    <section class="candidate-detail-view {{ 'is-active' if is_active else '' }}" data-candidate-detail="candidate-{{ candidate.rank }}">
+      <section class="panel featured-report-banner">
+        <div class="featured-report-copy">
+          <span>Candidate Detail View</span>
+          <h2>{{ candidate.candidate_name }}</h2>
+          <p>{{ candidate.filename }}</p>
+          <p>Rank #{{ candidate.rank }} | Experience Detection: {{ candidate.analysis.experience_display }}</p>
+        </div>
+        <div class="featured-report-score">
+          <strong>{{ candidate.analysis.ats_score if candidate.analysis.ats_score is not none else '--' }}%</strong>
+          <small>{{ candidate.analysis.score_label }}</small>
+        </div>
+      </section>
+
+      <section class="overview-grid">
+        <article class="panel score-panel">
+          <div class="section-head">
+            <h2>Executive Assessment</h2>
+            <span>{{ candidate.analysis.score_label }}</span>
+          </div>
+
+          {% if candidate.analysis.ats_score is not none %}
+            <div
+              class="score-ring"
+              style="background: conic-gradient(var(--accent) 0 {{ candidate.analysis.ats_score }}%, rgba(255,255,255,.08) {{ candidate.analysis.ats_score }}% 100%);"
+            >
+              <div class="score-ring-inner">
+                <span>Overall ATS Score</span>
+                <strong>{{ candidate.analysis.ats_score }}%</strong>
+                <small>{{ candidate.analysis.score_label }}</small>
+              </div>
+            </div>
+          {% else %}
+            <div class="score-ring score-ring-empty">
+              <div class="score-ring-inner">
+                <span>Overall ATS Score</span>
+                <strong>--</strong>
+                <small>{{ candidate.analysis.score_label }}</small>
+              </div>
+            </div>
+          {% endif %}
+
+          <p class="summary-copy">{{ candidate.analysis.summary }}</p>
+
+          <div class="score-tags">
+            <span>{{ candidate.analysis.coverage_percent }}% requirement match</span>
+            <span>{{ candidate.analysis.keyword_overlap_percent }}% keyword alignment</span>
+            <span>{{ candidate.analysis.semantic_similarity_percent }}% semantic similarity</span>
+            <span>{{ candidate.analysis.evidence_strength_percent }}% section evidence</span>
+            <span>{{ candidate.analysis.ats_readiness_percent }}% ATS readiness</span>
+          </div>
+        </article>
+
+        <article class="panel breakdown-panel">
+          <div class="section-head">
+            <h2>Scoring Breakdown</h2>
+            <span>Weighted Methodology</span>
+          </div>
+
+          {% if candidate.analysis.score_breakdown %}
+            <div class="breakdown-list">
+              {% for component in candidate.analysis.score_breakdown %}
+                <div class="breakdown-item">
+                  <div class="breakdown-topline">
+                    <strong>{{ component.name }}</strong>
+                    <span>{{ component.score_percent }}%</span>
+                  </div>
+                  <div class="progress-track">
+                    <span style="width: {{ component.score_percent }}%"></span>
+                  </div>
+                  <p>{{ component.detail }}</p>
+                  <small>Weight {{ component.weight_percent }}% - {{ component.contribution_points }} points contributed</small>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="empty-copy">Add a job description to generate the weighted score breakdown.</p>
+          {% endif %}
+        </article>
+
+        <article class="panel metrics-panel">
+          <div class="section-head">
+            <h2>Assessment Snapshot</h2>
+            <span>Key Metrics</span>
+          </div>
+          <div class="metric-grid">
+            <div class="metric-card">
+              <span>Resume skills</span>
+              <strong>{{ candidate.analysis.resume_skills|length }}</strong>
+            </div>
+            <div class="metric-card">
+              <span>Role skills</span>
+              <strong>{{ candidate.analysis.jd_skills|length }}</strong>
+            </div>
+            <div class="metric-card">
+              <span>Matched</span>
+              <strong>{{ candidate.analysis.matched_skills|length }}</strong>
+            </div>
+            <div class="metric-card">
+              <span>Missing</span>
+              <strong>{{ candidate.analysis.missing_skills|length }}</strong>
+            </div>
+            <div class="metric-card">
+              <span>Experience</span>
+              <strong>{{ candidate.analysis.experience_display }}</strong>
+            </div>
+            <div class="metric-card">
+              <span>Section evidence</span>
+              <strong>{{ candidate.analysis.evidence_strength_percent }}%</strong>
+            </div>
+            <div class="metric-card">
+              <span>ATS readiness</span>
+              <strong>{{ candidate.analysis.ats_readiness_percent }}%</strong>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="insight-grid">
+        <article class="panel section-audit-panel">
+          <div class="section-head">
+            <h2>Resume Section Audit</h2>
+            <span>Structure And Quality Review</span>
+          </div>
+
+          <div class="section-audit-list">
+            {% for section in candidate.analysis.resume_sections %}
+              <article class="section-audit-card {{ 'is-missing' if not section.present else '' }}">
+                <div class="section-audit-topline">
+                  <div>
+                    <h3>{{ section.name }}</h3>
+                    <p>{{ section.title }}</p>
+                  </div>
+                  <div class="audit-pill audit-pill-{{ section.status|lower|replace(' ', '-') }}">{{ section.status }}</div>
+                </div>
+
+                <div class="section-audit-metrics">
+                  <div>
+                    <span>Section score</span>
+                    <strong>{{ section.score_percent }}%</strong>
+                  </div>
+                  <div>
+                    <span>Words</span>
+                    <strong>{{ section.word_count }}</strong>
+                  </div>
+                  <div>
+                    <span>Skills</span>
+                    <strong>{{ section.skill_count }}</strong>
+                  </div>
+                </div>
+
+                {% if section.matched_role_skills %}
+                  <div class="mini-chip-cloud">
+                    {% for skill in section.matched_role_skills %}
+                      <span class="mini-chip">{{ skill }}</span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+
+                <p class="audit-guidance">{{ section.guidance }}</p>
+              </article>
+            {% endfor %}
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <h2>Priority Actions</h2>
+            <span>{{ candidate.analysis.priority_gaps|length }} Focus Items</span>
+          </div>
+
+          {% if candidate.analysis.priority_gaps %}
+            <div class="priority-list">
+              {% for gap in candidate.analysis.priority_gaps %}
+                <article class="priority-card">
+                  <div class="priority-meta">
+                    <span class="impact-pill">{{ gap.impact }}</span>
+                    <span class="signal-pill">{{ gap.signal_status }}</span>
+                  </div>
+                  <h3>{{ gap.name }}</h3>
+                  <p class="priority-category">{{ gap.category }}</p>
+                  <p>{{ gap.advice }}</p>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="empty-copy">No priority actions were generated for the current comparison.</p>
+          {% endif %}
+        </article>
+      </section>
+
+      <section class="support-grid">
+        <article class="panel">
+          <div class="section-head">
+            <h2>Coverage by Category</h2>
+            <span>Weighted Requirement Mapping</span>
+          </div>
+          {{ render_category_coverage(candidate.analysis.category_coverage, "Category coverage becomes available after the role description is analyzed.") }}
+        </article>
+
+        <article class="panel suggestions-panel">
+          <div class="section-head">
+            <h2>Revision Priorities</h2>
+            <span>{{ candidate.analysis.suggestions|length }} Recommendations</span>
+          </div>
+          {% if candidate.analysis.suggestions %}
+            <ul class="suggestion-list">
+              {% for item in candidate.analysis.suggestions %}
+                <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="empty-copy">No revision recommendations are available until the role description is supplied.</p>
+          {% endif %}
+        </article>
+      </section>
+
+      <section class="detail-grid">
+        <article class="panel">
+          <div class="section-head">
+            <h2>Matched Capabilities</h2>
+            <span>{{ candidate.analysis.matched_skills|length }} Represented</span>
+          </div>
+          {{ render_skill_groups(candidate.analysis.matched_skills, "No direct capability matches were identified.", "chip-positive") }}
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <h2>Capability Gaps</h2>
+            <span>{{ candidate.analysis.missing_skills|length }} Outstanding</span>
+          </div>
+          {{ render_skill_groups(candidate.analysis.missing_skills, "No major capability gaps were identified.", "chip-warning") }}
+        </article>
+
+        <article class="panel">
+          <div class="section-head">
+            <h2>Additional Resume Strengths</h2>
+            <span>{{ candidate.analysis.extra_resume_skills|length }} Additional Signals</span>
+          </div>
+          {{ render_skill_groups(candidate.analysis.extra_resume_skills, "No additional resume-only strengths were extracted beyond the role requirements.", "chip-soft") }}
+        </article>
+
+        <article class="panel keyword-panel">
+          <div class="section-head">
+            <h2>Keyword Alignment Review</h2>
+            <span>{{ candidate.analysis.matched_keywords|length }} Matched Terms</span>
+          </div>
+
+          <div class="keyword-columns">
+            <div class="keyword-column">
+              <h3>Matched Terms</h3>
+              {{ render_term_cloud(candidate.analysis.matched_keywords, "No role keywords were matched in the current resume text.", "chip-positive") }}
+            </div>
+
+            <div class="keyword-column">
+              <h3>Missing Terms</h3>
+              {{ render_term_cloud(candidate.analysis.missing_keywords, "No major keyword gaps were identified.", "chip-warning") }}
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel resume-text-panel">
+        <div class="section-head">
+          <h2>Resume Keyword Highlights</h2>
+          <span>{{ candidate.analysis.highlighted_terms|length }} Terms Highlighted</span>
+        </div>
+
+        {% if candidate.analysis.highlighted_terms %}
+          <div class="mini-chip-cloud">
+            {% for term in candidate.analysis.highlighted_terms %}
+              <span class="mini-chip mini-chip-positive">{{ term }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="empty-copy">No matching role terms were highlighted in the current resume text.</p>
+        {% endif %}
+
+        <div class="resume-text-view">{{ candidate.analysis.highlighted_resume_html|safe }}</div>
+      </section>
+    </section>
+  {%- endmacro %}
+
+  <div class="page">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-mark">RM</div>
+        <div>
+          <p class="brand-name">Resume Match Intelligence</p>
+          <p class="brand-subtitle">Executive ATS review and section-aware resume assessment</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span class="status-badge">Premium Review Mode</span>
+        {% if analysis %}
+          <button type="button" class="secondary-button" data-print-report>Print Report</button>
+        {% endif %}
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Section-Aware Resume Intelligence</p>
+        <h1>Rank multiple candidates against one role with a deeper ATS review.</h1>
+        <p class="lead">
+          Upload up to {{ max_resume_uploads }} resumes and one job description to generate a ranked
+          candidate list, ATS scores for every applicant, and a click-to-open full analysis for any selected profile.
+        </p>
+
+        <div class="hero-highlights">
+          <article class="hero-highlight">
+            <strong>Better ATS logic</strong>
+            <p>Required skills are weighted more heavily and validated by where they appear in the resume.</p>
+          </article>
+          <article class="hero-highlight">
+            <strong>Section-based parsing</strong>
+            <p>Summary, Experience, Projects, Skills, and Education are audited separately for structure and proof.</p>
+          </article>
+          <article class="hero-highlight">
+            <strong>Batch candidate ranking</strong>
+            <p>Every uploaded resume is scored against the same role and ordered from strongest to weakest match.</p>
+          </article>
+        </div>
+
+        <div class="hero-pills">
+          <span>Weighted role signals</span>
+          <span>Section evidence scoring</span>
+          <span>Top-to-low candidate ranking</span>
+          <span>Featured candidate report</span>
+        </div>
+      </div>
+
+      <aside class="panel form-panel">
+        <div class="form-head">
+          <p class="panel-kicker">New Assessment</p>
+          <h2>Generate Candidate Ranking</h2>
+          <p>Upload multiple resume PDFs and one target role description to produce a ranked shortlist.</p>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" class="upload-form">
+          <div class="field-stack">
+            <label class="field-label" for="resume_pdfs">Resume PDFs</label>
+            <label class="file-dropzone" for="resume_pdfs" data-file-dropzone>
+              <input
+                id="resume_pdfs"
+                name="resume_pdfs"
+                type="file"
+                accept=".pdf,application/pdf"
+                required
+                multiple
+                class="sr-only"
+                data-file-input
+              >
+              <div class="file-dropzone-copy">
+                <strong>Select or drop up to {{ max_resume_uploads }} PDF resumes</strong>
+                <span>All candidates will be scored against the same job description.</span>
+              </div>
+              <div class="file-dropzone-meta" data-file-name>No file selected</div>
+            </label>
+          </div>
+
+          <div class="field-stack">
+            <label class="field-label" for="job_description">Job Description</label>
+            <textarea
+              id="job_description"
+              name="job_description"
+              rows="11"
+              placeholder="Paste the complete job description here. A fuller role description improves required-skill weighting and section-aware fit scoring."
+            >{{ job_description|e }}</textarea>
+          </div>
+
+          <div class="form-benefits">
+            <span>Up to {{ max_resume_uploads }} resumes</span>
+            <span>One shared job description</span>
+            <span>Ranked ATS output</span>
+            <span>Click-to-open detail view</span>
+          </div>
+
+          <button type="submit" class="primary-button">Generate Candidate Ranking</button>
+        </form>
+      </aside>
+    </section>
+
+    {% if error %}
+      <section class="alert-card">
+        <strong>Submission issue</strong>
+        <p>{{ error }}</p>
+      </section>
+    {% endif %}
+
+    {% if failed_resumes %}
+      <section class="alert-card warning-card">
+        <strong>Some resumes were skipped</strong>
+        <ul class="alert-list">
+          {% for item in failed_resumes %}
+            <li><span>{{ item.filename }}</span> <small>{{ item.reason }}</small></li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    {% if analysis %}
+      <section class="panel report-ribbon">
+        <div class="report-meta">
+          <div class="report-meta-item">
+            <span>Report generated</span>
+            <strong>{{ report_timestamp }}</strong>
+          </div>
+          <div class="report-meta-item">
+            <span>Resumes submitted</span>
+            <strong>{{ ranking_summary.submitted_count }}</strong>
+          </div>
+          <div class="report-meta-item">
+            <span>Candidates ranked</span>
+            <strong>{{ ranking_summary.ranked_count }}</strong>
+          </div>
+          <div class="report-meta-item">
+            <span>Average ATS score</span>
+            <strong>{{ ranking_summary.average_score }}%</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="dashboard-grid">
+        <article class="panel dashboard-panel">
+          <div class="section-head">
+            <h2>Recruiter Dashboard</h2>
+            <span>Click Any Candidate To Open Full Analysis</span>
+          </div>
+          <p class="dashboard-copy">Use the table below to review rank, score, experience, and score-bar comparison for every submitted candidate.</p>
+
+          <div class="filter-toolbar">
+            <div class="filter-field">
+              <label for="min_score_filter">Minimum Score</label>
+              <input id="min_score_filter" type="number" min="0" max="100" step="1" value="0" data-filter-score>
+            </div>
+            <div class="filter-field">
+              <label for="min_experience_filter">Minimum Experience</label>
+              <input id="min_experience_filter" type="number" min="0" max="40" step="0.5" value="0" data-filter-experience>
+            </div>
+            <div class="filter-actions">
+              <div class="export-actions">
+                <button type="button" class="secondary-button" data-export-csv>Export CSV</button>
+                <button type="button" class="secondary-button" data-export-excel>Export Excel</button>
+                <button type="button" class="secondary-button" data-clear-filters>Clear Filters</button>
+              </div>
+              <p class="filter-summary" data-filter-summary>Showing all {{ ranked_candidates|length }} candidates</p>
+            </div>
+          </div>
+
+          <p class="filter-footnote">Experience filtering uses the estimated resume timeline where available. Resumes without a detectable timeline are treated as 0 years for filtering. Export actions download the current filtered shortlist.</p>
+
+          <div class="candidate-table-shell">
+            <table class="candidate-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Name</th>
+                  <th>Score</th>
+                  <th>Experience</th>
+                  <th>Visualization</th>
+                  <th>Detail View</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for candidate in ranked_candidates %}
+                  <tr
+                    class="candidate-table-row {{ 'is-active' if loop.first else '' }}"
+                    data-candidate-target="candidate-{{ candidate.rank }}"
+                    data-score="{{ candidate.analysis.ats_score or 0 }}"
+                    data-experience="{{ candidate.analysis.estimated_experience_years if candidate.analysis.estimated_experience_years is not none else 0 }}"
+                    tabindex="0"
+                    role="button"
+                    aria-selected="{{ 'true' if loop.first else 'false' }}"
+                  >
+                    <td class="candidate-rank-cell">#{{ candidate.rank }}</td>
+                    <td class="candidate-name-cell">
+                      <strong>{{ candidate.candidate_name }}</strong>
+                      <small>{{ candidate.filename }}</small>
+                    </td>
+                    <td class="candidate-score-cell">
+                      <strong>{{ candidate.analysis.ats_score }}%</strong>
+                      <small>{{ candidate.analysis.score_label }}</small>
+                    </td>
+                    <td class="candidate-exp-cell">{{ candidate.analysis.experience_display }}</td>
+                    <td class="candidate-bar-cell">
+                      <div class="score-bar-track" aria-hidden="true">
+                        <span style="width: {{ candidate.analysis.ats_score or 0 }}%"></span>
+                      </div>
+                      <small>{{ candidate.analysis.coverage_percent }}% requirement match</small>
+                    </td>
+                    <td class="candidate-action-cell">
+                      <button type="button" class="table-link-button" data-candidate-target="candidate-{{ candidate.rank }}">
+                        Open Full Analysis
+                      </button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="filter-empty-state" data-filter-empty hidden>
+            <strong>No candidates match the current filters.</strong>
+            <p>Lower the minimum score or experience threshold to restore matching profiles.</p>
+          </div>
+
+          <script type="application/json" data-export-payload>{{ export_candidates|tojson }}</script>
+        </article>
+      </section>
+
+      {% for candidate in ranked_candidates %}
+        {{ render_candidate_detail(candidate, loop.first) }}
+      {% endfor %}
+
+      <section class="report-disclaimer">
+        <p>
+          This assessment is intended to support professional resume screening, ATS optimization, and presentation review. Final hiring decisions should always include qualitative human evaluation of context, depth, and role fit.
+        </p>
+      </section>
+    {% else %}
+      <section class="panel preview-panel">
+        <div class="section-head">
+          <h2>What This Report Adds</h2>
+          <span>Higher-Fidelity ATS Review</span>
+        </div>
+
+        <div class="preview-grid">
+          <article class="preview-card">
+            <strong>Batch ranking</strong>
+            <p>Upload multiple resumes and receive a ranked candidate list from highest to lowest ATS fit.</p>
+          </article>
+          <article class="preview-card">
+            <strong>Section audit</strong>
+            <p>The featured report examines whether the top candidate proves fit inside Summary, Experience, Projects, Skills, and Education.</p>
+          </article>
+          <article class="preview-card">
+            <strong>Shared role comparison</strong>
+            <p>Every uploaded resume is evaluated against the same job description so shortlist decisions stay consistent.</p>
+          </article>
+        </div>
+      </section>
+    {% endif %}
+  </div>
+</body>
+</html>
